@@ -1,3 +1,18 @@
+# Folders
+_*/
+
+# Mac
+**/.DS_Store
+
+# Build
+dist/
+docs/gen/
+yarn.lock
+
+# IDE
+**/.vscode
+**/.idea
+
 # Logs
 logs
 *.log
