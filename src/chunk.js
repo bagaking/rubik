@@ -5,7 +5,7 @@ class Chunk extends CubeArea {
     constructor(width, height, depth, scale) {
         super(V3D.prefab.zero, new V3DSize(width, height, depth));
         this._scale = scale;
-        this._values = Array.apply(null, Array(this.cube.size.total)).map(_ => ({r: 0, g: 0, b: 0, a: 0, _e: false}));
+        this._values = Array.apply(null, Array(this.size.total)).map(_ => ({r: 0, g: 0, b: 0, a: 0, _e: false}));
     }
 
     /**
@@ -14,15 +14,22 @@ class Chunk extends CubeArea {
      * @returns {number} uint
      */
     get(pos) {
+        console.log(pos, this.posB2Ind(pos));
         return this._values[this.posB2Ind(pos)];
+    }
+
+    set(pos, r, g, b, a) {
+        return this._values[this.posB2Ind(pos)] = {
+            r, g, b, a, _e: true
+        };
     }
 
     build() {
         let sz = this._scale;
-        let vertices = [];
-        let colors = [];
+        let vertices = new Array();
+        let colors = new Array();
 
-        const faces = [
+        let faces = [
             [[0, 0, 0], [0, 1, 0], [0, 0, 1]],
             [[0, 0, 0], [0, 0, 1], [1, 0, 0]],
             [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
@@ -43,35 +50,37 @@ class Chunk extends CubeArea {
                 colors.push([color.r, color.g, color.b, color.a]);
             }
         }
+        console.log(makeFace)
 
-        this.size.forEachPosB(V3D.prefab.one, V3D.prefab.minusOne, (ind, ...posArr) => {
+        this._size.forEachPosB(V3D.prefab.one, V3D.prefab.minusOne, (ind, x, y, z) => {
+            console.log(ind, x, y, z);
             let t
-            if (t = get(x - 1, y, z), t._e) makeFace(t, posArr, faces[0]);
-            if (t = get(x, y - 1, z), t._e) makeFace(t, posArr, faces[1]);
-            if (t = get(x, y, z - 1), t._e) makeFace(t, posArr, faces[2]);
-            if (t = get(x + 1, y, z), t._e) makeFace(t, posArr, faces[3]);
-            if (t = get(x, y + 1, z), t._e) makeFace(t, posArr, faces[4]);
-            if (t = get(x, y, z + 1), t._e) makeFace(t, posArr, faces[5]);
+            if (t = this.get([x - 1, y, z]), t._e) makeFace(t, [x, y, z], ...faces[0]);
+            if (t = this.get([x, y - 1, z]), t._e) makeFace(t, [x, y, z], ...faces[1]);
+            if (t = this.get([x, y, z - 1]), t._e) makeFace(t, [x, y, z], ...faces[2]);
+            if (t = this.get([x + 1, y, z]), t._e) makeFace(t, [x, y, z], ...faces[3]);
+            if (t = this.get([x, y + 1, z]), t._e) makeFace(t, [x, y, z], ...faces[4]);
+            if (t = this.get([x, y, z + 1]), t._e) makeFace(t, [x, y, z], ...faces[5]);
         });
 
         // Create Object
         let geometry = new THREE.BufferGeometry();
-        let v = new THREE.BufferAttribute( new Float32Array( vertices.length * 3), 3 );
-        let c = new THREE.BufferAttribute(new Float32Array( colors.length *4), 4 );
+        let v = new THREE.BufferAttribute(new Float32Array(vertices.length * 3), 3);
+        let c = new THREE.BufferAttribute(new Float32Array(colors.length * 4), 4);
 
         vertices.forEach((arr, i) => v.setXYZ(i, ...arr));
-        geometry.addAttribute( 'position', v );
-        colors.set((arr, i) => c.setXYZW(i, ... arr.map(k => k / 255)))
-        geometry.addAttribute( 'color', c );
+        geometry.addAttribute('position', v);
+        console.log(vertices);
+
+        colors.forEach((arr, i) => c.setXYZW(i, ... arr.map(k => k / 255)))
+        geometry.addAttribute('color', c);
+        console.log(colors);
 
         geometry.computeBoundingBox();
 
-        geometry.applyMatrix( new THREE.Matrix4().makeTranslation(-geometry.boundingBox.max.x/2, -geometry.boundingBox.max.z/2, 0));
+        geometry.applyMatrix(new THREE.Matrix4().makeTranslation(
+            -geometry.boundingBox.max.x / 2, -geometry.boundingBox.max.z / 2, 0));
         geometry.computeVertexNormals();
-
-        let mat = new THREE.MeshLambertMaterial({ vertexColors: THREE.VertexColors });
-        let mesh = new THREE.Mesh(geometry, mat);
-        mesh.position.set(0, 0 , 0);
         return mesh;
     }
 
