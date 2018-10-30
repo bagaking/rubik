@@ -8,8 +8,8 @@ window.TheChunk = Chunk
  * @param {Chunk} chunk
  */
 window.ChunkToMesh = (chunk) => {
-    if(chunk.dirty || !chunk.builded) { chunk.rebuild(); }
-    console.log(chunk);
+    if(chunk.dirty || !chunk.alreadyBuilt) { chunk.rebuild(); }
+    //console.log(chunk);
 
     // Create Object
     let geometry = new THREE.BufferGeometry();

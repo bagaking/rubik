@@ -5,7 +5,7 @@ class Chunk extends CubeArea {
     constructor(width, height, depth, scale) {
         super(V3D.prefab.zero, new V3DSize(width, height, depth));
         this._scale = scale;
-        this._values = Array.apply(null, Array(this.size.total)).map(_ => ({r: 0, g: 0, b: 0, a: 0, _e: false}));
+        this._values = [... Array(this.size.total)].map(_ => ({r: 0, g: 0, b: 0, a: 0, _e: false}));
         this._dirty = 0;
         this.clearBuild();
     }
@@ -47,7 +47,7 @@ class Chunk extends CubeArea {
         return this._dirty > 0;
     }
 
-    get builded() {
+    get alreadyBuilt() {
         return this._builded;
     }
 
