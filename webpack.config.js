@@ -8,5 +8,5 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
         filename: '[name].bundle.js'
     },
-    devtool: 'cheap-module-source-map', // inline-source-map eval-source-map cheap-module-source-map
+    devtool: 'inline-module-source-map', // inline-source-map eval-source-map cheap-module-source-map
 };
