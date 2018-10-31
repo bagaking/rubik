@@ -1,7 +1,16 @@
 const _ = require("lodash")
+const Chunk = require("./chunk")
 const {V3DSize} = require("spaceout").measure
 
-function readInt(byteArray, from) {
+function readInt32Arr(byteArray, from, count = 1) {
+    let ret = new Array(count);
+    for (let i = 0; i < count; i++) {
+        ret.push(readInt32(byteArray, from + i * 4));
+    }
+    return ret;
+}
+
+function readInt32(byteArray, from = 0) {
     return buffer[from] | (buffer[from + 1] << 8) | (buffer[from + 2] << 16) | (buffer[from + 3] << 24);
 };
 
@@ -13,8 +22,8 @@ function readChunkHead(byteArray, from) {
     let ind = from;
     let ret = {}
     ret.id = readStr(byteArray, ind, ind += 4);
-    ret.size = readInt(byteArray, ind) & 0xFF;
-    ret.childrenNum = readInt(byteArray, ind + 4) & 0xFF;
+    ret.size = readInt32(byteArray, ind) & 0xFF;
+    ret.childrenNum = readInt32(byteArray, ind + 4) & 0xFF;
     return ret;
 };
 
@@ -40,7 +49,12 @@ let defaultPalette = [
 class Voxel {
 
     constructor() {
+        this.name = "";
+        this.chunks = [];
+    }
 
+    get chunkCur() {
+        return this.chunks[this.chunks.length - 1];
     }
 
     /**
@@ -62,32 +76,75 @@ class Voxel {
             throw new Error(`LoadModel error : vox file symbol should be exactly 'VOX '. The symbol '${voxFileSymbol}' is not supported.`);
         }
 
-        let voxFileVersion = readInt(byteArray, 4);
+        let voxFileVersion = readInt32(byteArray, 4);
         if (voxFileVersion !== 0x96) {
             throw new Error(`LoadModel error : version should be exactly 150. The version ${version} is not supported`);
         }
 
+        // TBD: Check version to support
         let i = 8;
         while (i < byteArray.length) {
             let chunkInfo = readChunkHead(byteArray, i);
             i += 12; // skip head length
 
-            switch (chunkInfo.id) {
-                case 'MAIN':
-                    break;
-                case 'PACK': // optional
-                    break;
-                case 'SIZE':
-                    break;
-                case 'XYZI':
-                    break;
-                case 'RGBA': // optional
-                    break;
-                case 'MATT': // optional
-                    break;
+            let packNum = 1;
+            const setPack = buf => packNum = readInt32(buf);
+            const readSize = buf => this.chunks.push(new Chunk(...readInt32Arr(buf, i, 3)));
+            const readData = buf => {
+                let length = Math.abs(readInt32(buf));
+                for (let di = 0; di < length; di++) {
+                    this.chunkCur.set(byteArray.slice(4 * (1 + di), 4 * (1 + di) + 3), 1, 1, 1, 1) // todo: ind 2 color here
+                }
+                // todo
             }
+            const readPale = buf => {
+                // todo
+            }
+            const readMatt = buf => {
+                // todo
+            }
+            const sm = {
+                trans: {
+                    ____: {
+                        MAIN: console.log
+                    },
+                    MAIN: {
+                        PACK: setPack,
+                        SIZE: readSize,
+                    },
+                    PACK: {
+                        SIZE: readSize,
+                    },
+                    SIZE: {
+                        XYZI: readData,
+                    },
+                    XYZI: {
+                        SIZE: readSize,
+                        RGBA: readPale,
+                        MATT: readMatt
+                    },
+                    RGBA: {
+                        MATT: readMatt
+                    },
+                    MATT: {
+                        MATT: readMatt
+                    }
+                },
+                latest: "____",
+                transfer(chunkInfo, cdStart, cdEnd) {
+                    let func;
+                    if (!sm.trans[sm.latest] || !(func = sm.trans[sm.latest][chunkInfo.id])) {
+                        throw new Error(`State Machine Error: transfer does not exist ${sm.latest} => ${chunkInfo.id}.`)
+                    }
+                    sm.latest = chunkInfo.id;
+                    func(byteArray.slice(cdStart, cdEnd), chunkInfo); // FIXME: copy happend
+                }
+            };
+            let cdStart = i;
+            let cdEnd = i + chunkInfo.size;
+            sm.transfer(chunkInfo, cdStart, cdEnd);
+            i += chunkInfo.size; // todo : should i do this? or done it in each function?
         }
-
         this.name = name;
     };
 
