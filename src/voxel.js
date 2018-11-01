@@ -11,23 +11,29 @@ function readInt32Arr(byteArray, from, count = 1) {
 }
 
 function readInt32(byteArray, from = 0) {
-    return buffer[from] | (buffer[from + 1] << 8) | (buffer[from + 2] << 16) | (buffer[from + 3] << 24);
+    return byteArray[from] | (byteArray[from + 1] << 8) | (byteArray[from + 2] << 16) | (byteArray[from + 3] << 24);
+};
+
+function readColor32(byteArray, from = 0) {
+    return byteArray[from] << 24 | (byteArray[from + 1] << 16) | (byteArray[from + 2] << 8) | (byteArray[from + 3]);
 };
 
 function readStr(byteArray, from, to) {
-    return String.fromCharCode(...byteArray.slice(from, to));
+    let arr = byteArray.slice(from, to)
+    console.log(`readStr`, from, to, arr)
+    return String.fromCharCode(...arr);
 }
 
 function readChunkHead(byteArray, from) {
     let ind = from;
-    let ret = {}
+    let ret = {};
     ret.id = readStr(byteArray, ind, ind += 4);
     ret.size = readInt32(byteArray, ind) & 0xFF;
     ret.childrenNum = readInt32(byteArray, ind + 4) & 0xFF;
     return ret;
 };
 
-let defaultPalette = [
+const defaultPalette = [
     0x00000000, 0xffffffff, 0xffccffff, 0xff99ffff, 0xff66ffff, 0xff33ffff, 0xff00ffff, 0xffffccff, 0xffccccff, 0xff99ccff, 0xff66ccff, 0xff33ccff, 0xff00ccff, 0xffff99ff, 0xffcc99ff, 0xff9999ff,
     0xff6699ff, 0xff3399ff, 0xff0099ff, 0xffff66ff, 0xffcc66ff, 0xff9966ff, 0xff6666ff, 0xff3366ff, 0xff0066ff, 0xffff33ff, 0xffcc33ff, 0xff9933ff, 0xff6633ff, 0xff3333ff, 0xff0033ff, 0xffff00ff,
     0xffcc00ff, 0xff9900ff, 0xff6600ff, 0xff3300ff, 0xff0000ff, 0xffffffcc, 0xffccffcc, 0xff99ffcc, 0xff66ffcc, 0xff33ffcc, 0xff00ffcc, 0xffffcccc, 0xffcccccc, 0xff99cccc, 0xff66cccc, 0xff33cccc,
@@ -51,10 +57,16 @@ class Voxel {
     constructor() {
         this.name = "";
         this.chunks = [];
+        this.palette = defaultPalette;
     }
 
     get chunkCur() {
         return this.chunks[this.chunks.length - 1];
+    }
+
+    getColor(ind) {
+        let color32 = this.palette[ind];
+        return [color32 >> 24 & 0xFF, color32 >> 16 & 0xFF, color32 >> 8 & 0xFF, color32 & 0xFF];
     }
 
     /**
@@ -63,8 +75,9 @@ class Voxel {
      * @param {string} name
      * @param {Buffer | ArrayBuffer } input
      */
-    Load(name, buffer) {
-        if (!_.isBuffer(buffer)) {
+    Load(name, buffer, scale = 1) {
+        console.log("start decode", buffer);
+        if (!_.isBuffer(buffer) && !_.isArrayBuffer(buffer)) {
             throw new Error(`LoadModel error : input should be a buffer. ${buffer} is invalid.`);
         }
 
@@ -82,69 +95,122 @@ class Voxel {
         }
 
         // TBD: Check version to support
-        let i = 8;
-        while (i < byteArray.length) {
-            let chunkInfo = readChunkHead(byteArray, i);
-            i += 12; // skip head length
-
-            let packNum = 1;
-            const setPack = buf => packNum = readInt32(buf);
-            const readSize = buf => this.chunks.push(new Chunk(...readInt32Arr(buf, i, 3)));
-            const readData = buf => {
-                let length = Math.abs(readInt32(buf));
-                for (let di = 0; di < length; di++) {
-                    this.chunkCur.set(byteArray.slice(4 * (1 + di), 4 * (1 + di) + 3), 1, 1, 1, 1) // todo: ind 2 color here
+        let chunksHdl = {
+            handler: {
+                RGBA: [],
+                RGBA: [],
+                MATT: [],
+                OTHERS: [],
+            },
+            packNum: 1,
+            chunkTemp: null,
+            deal: (chunkID, start, end) => {
+                switch (chunkID) {
+                    case "MAIN": /** the root chunk and parent chunk of all the other chunks */
+                        break;
+                    case "PACK":
+                        /**
+                         * if it is absent, only one model in the file
+                         * 4        | int        | numModels : num of SIZE and XYZI chunks
+                         */
+                        chunksHdl.packNum = readInt32(byteArray, start);
+                        break;
+                    case "SIZE":
+                        /**
+                         *  model size
+                         *  4        | int        | size x
+                         *  4        | int        | size y
+                         *  4        | int        | size z : gravity direction
+                         */
+                        if (!!chunksHdl.chunkTemp) {
+                            throw new Error("chunk id SIZE error: already exist");
+                        }
+                        chunksHdl.chunkTemp = new Chunk(...readInt32Arr(byteArray, start, 3), scale);
+                    case "XYZI":
+                        /**
+                         *  model voxels
+                         *  4        | int        | numVoxels (N)
+                         *  4 x N    | int        | (x, y, z, colorIndex) : 1 byte for each component
+                         */
+                        if (!chunksHdl.chunkTemp) {
+                            throw new Error("chunk id XYZI error: haven't been created");
+                        }
+                        let length = Math.abs(readInt32(byteArray));
+                        start += 4;
+                        for (let i = 1; i < length; i++) {
+                            chunksHdl.chunkTemp.set(
+                                byteArray.slice(start + 4 * i, start + 4 * i + 3),
+                                ...this.getColor(byteArray[start + 4 * i + 4])
+                            )
+                        }
+                        console.log("XYZI", length);
+                        this.chunkCur.push(chunksHdl.chunkTemp);
+                        chunksHdl.chunkTemp = null;
+                        break;
+                    case "RGBA":
+                        /**
+                         * palette
+                         * 4 x 256  | int         | (R, G, B, A) : 1 byte for each component
+                         *                        | color [0-254] are mapped to palette index [1-255]
+                         */
+                        let palette = new Array(256);
+                        palette[0] = 0x00000000;
+                        for (let i = 0; i <= 254; i++) {
+                            palette[i + 1] = readColor32(byteArray, start + i * 4);
+                            this.palette = palette;
+                        }
+                        break;
+                    case "MATT":
+                        break;
                 }
-                // todo
-            }
-            const readPale = buf => {
-                // todo
-            }
-            const readMatt = buf => {
-                // todo
-            }
-            const sm = {
-                trans: {
-                    ____: {
-                        MAIN: console.log
-                    },
-                    MAIN: {
-                        PACK: setPack,
-                        SIZE: readSize,
-                    },
-                    PACK: {
-                        SIZE: readSize,
-                    },
-                    SIZE: {
-                        XYZI: readData,
-                    },
-                    XYZI: {
-                        SIZE: readSize,
-                        RGBA: readPale,
-                        MATT: readMatt
-                    },
-                    RGBA: {
-                        MATT: readMatt
-                    },
-                    MATT: {
-                        MATT: readMatt
-                    }
-                },
+            },
+            dealAll() {
+                // todo: some check here
+                chunksHdl.handler.RGBA.forEach(callArr => chunksHdl.deal(...callArr));
+                chunksHdl.handler.MATT.forEach(callArr => chunksHdl.deal(...callArr));
+                chunksHdl.handler.OTHERS.forEach(callArr => chunksHdl.deal(...callArr));
+            },
+            sm: {
                 latest: "____",
+                trans: {
+                    ____: ["MAIN"],
+                    MAIN: ["PACK", "SIZE"],
+                    PACK: ["SIZE"],
+                    SIZE: ["XYZI"],
+                    XYZI: ["SIZE", "RGBA", "MATT"],
+                    RGBA: ["MATT"],
+                    MATT: ["MATT"]
+                },
                 transfer(chunkInfo, cdStart, cdEnd) {
-                    let func;
-                    if (!sm.trans[sm.latest] || !(func = sm.trans[sm.latest][chunkInfo.id])) {
-                        throw new Error(`State Machine Error: transfer does not exist ${sm.latest} => ${chunkInfo.id}.`)
+                    let id = chunkInfo.id;
+                    if (!chunksHdl.sm.trans[chunksHdl.sm.latest] || !chunksHdl.sm.trans[chunksHdl.sm.latest].find(_v => _v === id)) {
+                        throw new Error(`State Machine Error: Transfer does not exist ${chunksHdl.sm.latest} => ${id}. The chunk id is invalid in this case.`)
                     }
-                    sm.latest = chunkInfo.id;
-                    func(byteArray.slice(cdStart, cdEnd), chunkInfo); // FIXME: copy happend
+                    let callArr = [id, cdStart, cdEnd];
+                    chunksHdl.sm.latest = id;
+                    if (id in chunksHdl.handler) {
+                        chunksHdl.handler[id].push(callArr);
+                    } else {
+                        chunksHdl.handler.OTHERS.push(callArr);
+                    }
+                    console.log("insert chunk ", id, cdStart, cdEnd);
                 }
-            };
-            let cdStart = i;
-            let cdEnd = i + chunkInfo.size;
-            sm.transfer(chunkInfo, cdStart, cdEnd);
-            i += chunkInfo.size; // todo : should i do this? or done it in each function?
+            }
         }
+
+
+        let cur = 8;
+        while (cur < byteArray.length) {
+            let chunkInfo = readChunkHead(byteArray, cur);
+            cur += 12; // skip head length
+            let cdStart = cur;
+            let cdEnd = cur + chunkInfo.size;
+            console.log("find chunk ", chunkInfo, cdStart, cdEnd);
+            chunksHdl.sm.transfer(chunkInfo, cdStart, cdEnd);
+            cur += chunkInfo.size; // todo : should cur do this? or done it in each function?
+        }
+
+        chunksHdl.dealAll();
         this.name = name;
     };
 
