@@ -1,11 +1,12 @@
-const _ = require("lodash")
-const Chunk = require("./chunk")
-const {V3DSize} = require("spaceout").measure
+const _ = require("lodash");
+const Chunk = require("./chunk");
+
+const {V3DSize} = require("spaceout").measure;
 
 function readInt32Arr(byteArray, from, count = 1) {
     let ret = new Array(count);
     for (let i = 0; i < count; i++) {
-        ret.push(readInt32(byteArray, from + i * 4));
+        ret[i] = readInt32(byteArray, from + i * 4);
     }
     return ret;
 }
@@ -18,9 +19,25 @@ function readColor32(byteArray, from = 0) {
     return byteArray[from] << 24 | (byteArray[from + 1] << 16) | (byteArray[from + 2] << 8) | (byteArray[from + 3]);
 };
 
+function readColor16B(byteArray, from = 0) {
+    return (byteArray[from] << 24)
+        | (byteArray[from + 4] << 16)
+        | (byteArray[from + 8] << 8)
+        | (byteArray[from + 12]);
+};
+
+
+function readColorTable4B(byteArray, from = 0) {
+    return [byteArray[from], byteArray[from + 1], byteArray[from + 2], byteArray[from + 3]]
+};
+
+function color32ToColorTable(color32) {
+    return [color32 >> 24 & 0xFF, color32 >> 16 & 0xFF, color32 >> 8 & 0xFF, color32 & 0xFF]
+}
+
 function readStr(byteArray, from, to) {
     let arr = byteArray.slice(from, to)
-    console.log(`readStr`, from, to, arr)
+    //console.log(`readStr`, from, to, arr)
     return String.fromCharCode(...arr);
 }
 
@@ -57,16 +74,11 @@ class Voxel {
     constructor() {
         this.name = "";
         this.chunks = [];
-        this.palette = defaultPalette;
-    }
-
-    get chunkCur() {
-        return this.chunks[this.chunks.length - 1];
+        this.palette = defaultPalette.map(color32ToColorTable);
     }
 
     getColor(ind) {
-        let color32 = this.palette[ind];
-        return [color32 >> 24 & 0xFF, color32 >> 16 & 0xFF, color32 >> 8 & 0xFF, color32 & 0xFF];
+        return this.palette[ind];
     }
 
     /**
@@ -94,7 +106,6 @@ class Voxel {
             throw new Error(`LoadModel error : version should be exactly 150. The version ${version} is not supported`);
         }
 
-        // TBD: Check version to support
         let chunksHdl = {
             handler: {
                 RGBA: [],
@@ -103,8 +114,24 @@ class Voxel {
                 OTHERS: [],
             },
             packNum: 1,
-            chunkTemp: null,
+            realLength: (chunkID, start) => {
+                switch (chunkID) {
+                    case "MAIN":
+                        return 0;
+                    case "PACK":
+                        return 4;
+                    case "SIZE":
+                        return 12;
+                    case "XYZI":
+                        return 4 * (Math.abs(readInt32(byteArray, start)) + 1)
+                    case "RGBA":
+                        return 1024; // for each phase (r,g,b,a).
+                    case "MATT": // todo:
+                        break;
+                }
+            },
             deal: (chunkID, start, end) => {
+                // console.log(`deal chunk ${chunkID} ${start}`)
                 switch (chunkID) {
                     case "MAIN": /** the root chunk and parent chunk of all the other chunks */
                         break;
@@ -122,30 +149,40 @@ class Voxel {
                          *  4        | int        | size y
                          *  4        | int        | size z : gravity direction
                          */
-                        if (!!chunksHdl.chunkTemp) {
+                        if (!!this.chunkTemp) {
                             throw new Error("chunk id SIZE error: already exist");
                         }
-                        chunksHdl.chunkTemp = new Chunk(...readInt32Arr(byteArray, start, 3), scale);
+                        let szArr = readInt32Arr(byteArray, start, 3);
+                        this.chunkTemp = new Chunk(...szArr, scale);
+                        //console.log(`SIZE : ${szArr} x${scale}`, chunkTemp);
+                        break;
                     case "XYZI":
                         /**
                          *  model voxels
                          *  4        | int        | numVoxels (N)
                          *  4 x N    | int        | (x, y, z, colorIndex) : 1 byte for each component
                          */
-                        if (!chunksHdl.chunkTemp) {
+                        if (!this.chunkTemp) {
                             throw new Error("chunk id XYZI error: haven't been created");
                         }
-                        let length = Math.abs(readInt32(byteArray));
+
+
+                        let length = Math.abs(readInt32(byteArray, start));
                         start += 4;
-                        for (let i = 1; i < length; i++) {
-                            chunksHdl.chunkTemp.set(
-                                byteArray.slice(start + 4 * i, start + 4 * i + 3),
-                                ...this.getColor(byteArray[start + 4 * i + 4])
-                            )
+
+                        for (let i = 0; i < length; i++) {
+                            let posIndPos = start + 4 * i;
+                            let colorIndPos = posIndPos + 3;
+                            let pos = byteArray.slice(posIndPos, colorIndPos);
+                            let colorInd = byteArray[colorIndPos];
+                            let color = this.getColor(colorInd);
+                            // console.log(`chunkTemp.set|${i}/${length}|(${pos}, ${color})`, i, colorIndPos, colorIndPos, colorInd, pos, color);
+                            this.chunkTemp.set(pos, ...color);
                         }
-                        console.log("XYZI", length);
-                        this.chunkCur.push(chunksHdl.chunkTemp);
-                        chunksHdl.chunkTemp = null;
+                        this.chunks.push(this.chunkTemp);
+                        this.chunkTemp = undefined;
+
+                        console.log("XYZI_PUSH_CHUNK", length, this.chunks);
                         break;
                     case "RGBA":
                         /**
@@ -153,11 +190,10 @@ class Voxel {
                          * 4 x 256  | int         | (R, G, B, A) : 1 byte for each component
                          *                        | color [0-254] are mapped to palette index [1-255]
                          */
-                        let palette = new Array(256);
-                        palette[0] = 0x00000000;
                         for (let i = 0; i <= 254; i++) {
-                            palette[i + 1] = readColor32(byteArray, start + i * 4);
-                            this.palette = palette;
+                            let colorArr = readColorTable4B(byteArray, start + i * 4);
+                            // console.log(`${start + i * 4} => palette[${i+1}] = ${colorArr}`);
+                            this.palette[i + 1] = colorArr;
                         }
                         break;
                     case "MATT":
@@ -168,7 +204,10 @@ class Voxel {
                 // todo: some check here
                 chunksHdl.handler.RGBA.forEach(callArr => chunksHdl.deal(...callArr));
                 chunksHdl.handler.MATT.forEach(callArr => chunksHdl.deal(...callArr));
-                chunksHdl.handler.OTHERS.forEach(callArr => chunksHdl.deal(...callArr));
+                chunksHdl.handler.OTHERS.forEach(callArr => {
+                    // console.log("callArr", callArr);
+                    chunksHdl.deal(...callArr);
+                });
             },
             sm: {
                 latest: "____",
@@ -186,6 +225,7 @@ class Voxel {
                     if (!chunksHdl.sm.trans[chunksHdl.sm.latest] || !chunksHdl.sm.trans[chunksHdl.sm.latest].find(_v => _v === id)) {
                         throw new Error(`State Machine Error: Transfer does not exist ${chunksHdl.sm.latest} => ${id}. The chunk id is invalid in this case.`)
                     }
+
                     let callArr = [id, cdStart, cdEnd];
                     chunksHdl.sm.latest = id;
                     if (id in chunksHdl.handler) {
@@ -193,7 +233,7 @@ class Voxel {
                     } else {
                         chunksHdl.handler.OTHERS.push(callArr);
                     }
-                    console.log("insert chunk ", id, cdStart, cdEnd);
+                    // console.log("insert chunk ", id, cdStart, cdEnd);
                 }
             }
         }
@@ -204,10 +244,12 @@ class Voxel {
             let chunkInfo = readChunkHead(byteArray, cur);
             cur += 12; // skip head length
             let cdStart = cur;
-            let cdEnd = cur + chunkInfo.size;
-            console.log("find chunk ", chunkInfo, cdStart, cdEnd);
+            let length = chunksHdl.realLength(chunkInfo.id, cdStart)
+            let cdEnd = cur + length;
+
+            console.log("find chunk ", chunkInfo, cdStart, cdEnd, length, chunkInfo.size == length);
             chunksHdl.sm.transfer(chunkInfo, cdStart, cdEnd);
-            cur += chunkInfo.size; // todo : should cur do this? or done it in each function?
+            cur += length; // todo : should cur do this? or done it in each function?
         }
 
         chunksHdl.dealAll();
