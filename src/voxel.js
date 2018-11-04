@@ -109,7 +109,6 @@ class Voxel {
         let chunksHdl = {
             handler: {
                 RGBA: [],
-                RGBA: [],
                 MATT: [],
                 OTHERS: [],
             },
@@ -165,7 +164,6 @@ class Voxel {
                         if (!this.chunkTemp) {
                             throw new Error("chunk id XYZI error: haven't been created");
                         }
-
 
                         let length = Math.abs(readInt32(byteArray, start));
                         start += 4;

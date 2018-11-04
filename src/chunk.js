@@ -8,6 +8,8 @@ class Chunk extends CubeArea {
         this._values = [... Array(this.size.total)].map(_ => ({r: 0, g: 0, b: 0, a: 0, _e: false}));
         this._dirty = 0;
         this.clearBuild();
+
+        console.log(`chunk created (${width},${height},${depth})x${scale}`);
     }
 
     clearBuild() {
@@ -32,15 +34,17 @@ class Chunk extends CubeArea {
      * @param {number} g
      * @param {number} b
      * @param {number} a
-     * @return {{r: *, g: *, b: *, a: *, _e: boolean}}
+     * @return {Chunk} this
      */
     set(pos, r, g, b, a, enabled = true) {
         let data = {
             r, g, b, a, _e: enabled
         };
-        this._values[this.posB2Ind(pos)] = data;
+        let ind = this.posB2Ind(pos);
+        this._values[ind] = data;
+        //console.log(pos, data, ind, this._values[ind]);
         this._dirty += 1;
-        return data;
+        return this;
     }
 
     get dirty() {
@@ -99,6 +103,8 @@ class Chunk extends CubeArea {
 
         this._dirty = 0;
         this._builded = true;
+
+        console.log(`CHUNK REBUILD ==> VS:${this._vertices.length} CS:${this._colors.length}`);
         return this;
     }
 
