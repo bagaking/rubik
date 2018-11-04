@@ -15,17 +15,17 @@ window.ChunkToMesh = (chunk) => {
         //console.log("rebuild", chunk, chunk.alreadyBuilt, chunk.dirty);
         chunk.rebuild();
     }
-    //console.log(chunk);
+    console.log("=== ChunkToMesh ===>", chunk);
 
     // Create Object
     let geometry = new THREE.BufferGeometry();
-    let v = new THREE.BufferAttribute(new Float32Array(chunk.vertices.length * 3), 3);
-    let c = new THREE.BufferAttribute(new Float32Array(chunk.colors.length * 4), 4);
+    let v = new THREE.BufferAttribute(new Float32Array(chunk.vertexGroups.reduce((t,arr)=>t+arr.length,0) * 3), 3);
+    let c = new THREE.BufferAttribute(new Float32Array(chunk.colorGroups.reduce((t,arr)=>t+arr.length,0) * 4), 4);
 
-    chunk.vertices.forEach((arr, i) => v.setXYZ(i, ...arr));
+    chunk.vertexGroups.forEach(group => group.forEach((arr, i) => v.setXYZ(i, ...arr)));
     geometry.addAttribute('position', v);
 
-    chunk.colors.forEach((arr, i) => c.setXYZW(i, ... arr.map(k => k / 255)))
+    chunk.colorGroups.forEach(group => group.forEach((arr, i) => c.setXYZW(i, ... arr.map(k => k / 255))));
     geometry.addAttribute('color', c);
 
     geometry.computeBoundingBox();
