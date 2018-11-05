@@ -134,9 +134,14 @@ class Chunk extends CubeArea {
             this._vertexGroups[groupID].push(inside);
 
 
-            let rate = (101 - t) / 100;
-            let cs = this._fakeAO ? [color.r * rate | 0, color.g * rate | 0, color.b * rate | 0, color.a * rate | 0] :
-                [color.r, color.g, color.b, color.a];
+            let cs;
+            if(this._fakeAO){
+                let rate = (100 - (Math.pow((t - 1), 2) / 2)) / 100;
+                cs = [color.r * rate | 0, color.g * rate | 0, color.b * rate | 0, color.a * rate | 0];
+            }else {
+                cs = [color.r, color.g, color.b, color.a];
+            }
+
             // console.log(v0, t, color, cs)
             // if (!t) {
             //     console.log(""v0, t, color, cs);
