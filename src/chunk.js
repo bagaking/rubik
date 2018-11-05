@@ -14,7 +14,6 @@ class Chunk extends CubeArea {
 
         this._scale = scale;
         this._values = [... Array(this.size.total)].map(_ => ({r: 0, g: 0, b: 0, a: 0, _e: false}));
-        this._dirty = {};
         this.clearBuild();
 
         if (!scale) {
@@ -42,11 +41,12 @@ class Chunk extends CubeArea {
         let from = this.restrictPosB(posB.scl(this._groupSideLength));
         let size = V3D.prefab.one.scl(this._groupSideLength - 1);
         let to = this.restrictPosB(from.add(size));
-        console.log("getGroupFromTo", posB, from, size, to)
+        // console.log("getGroupFromTo", posB, from, size, to)
         return {from, to};
     }
 
     clearBuild() {
+        this._dirty = {};
         this._builded = false;
         this._vertexGroups = new Array(this._groupSize.total);
         this._colorGroups = new Array(this._groupSize.total);
@@ -84,7 +84,7 @@ class Chunk extends CubeArea {
     }
 
     get dirty() {
-        return Object.keys[this._dirty] > 0;
+        return Object.keys(this._dirty).length > 0;
     }
 
     get alreadyBuilt() {
@@ -100,6 +100,10 @@ class Chunk extends CubeArea {
     }
 
     rebuild() {
+        if (this.alreadyBuilt && !this.dirty) {
+            return false; // no need to rebuild
+        }
+        console.log("============= rebuild");
 
         let sz = this._scale;
 
@@ -125,22 +129,24 @@ class Chunk extends CubeArea {
         }
 
         this._groupSize.forEachPosB(ind => {
+            if (!ind in this._dirty) {
+                return;
+            }
 
             let {from, to} = this.getGroupFromTo(ind);
-            console.log("=>", ind, from, to);
-            if (!this._vertexGroups[ind]) {
-                this._vertexGroups[ind] = [];
-            }
-            if (!this._colorGroups[ind]) {
-                this._colorGroups[ind] = [];
-            }
+
+            this._vertexGroups[ind] = [];
+            this._colorGroups[ind] = [];
+
+            let count = 0;
             V3D.forEachFromTo((x, y, z) => {
                 let me = this.get([x, y, z]);
                 if (!me) {
                     throw new Error(`get item error : group-${ind}, x-${x}, y-${y}, z-${z}`)
                 }
                 if (!me._e) return;
-                console.log("active position", x, y, z, me);
+                count++;
+                // console.log("active position", x, y, z, me);
 
                 let t
                 if (x === 0 || (t = this.get([x - 1, y, z]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[0]);
@@ -150,13 +156,18 @@ class Chunk extends CubeArea {
                 if (y + 1 === this.size.height || (t = this.get([x, y + 1, z]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[4]);
                 if (z + 1 === this.size.depth || (t = this.get([x, y, z + 1]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[5]);
             }, from, to)
+
+            if (count > 0) {
+                console.log("=>", ind, to, count);
+            }
+
+            delete this._dirty[ind];
         })
 
-        this._dirty = {};
         this._builded = true;
 
         console.log(`CHUNK REBUILD ==> VS:${this._vertexGroups.length} CS:${this._colorGroups.length}`);
-        return this;
+        return true;
     }
 
 }
