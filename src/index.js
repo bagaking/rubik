@@ -11,17 +11,20 @@ window.Voxel = Voxel;
  * @param {Chunk} chunk
  */
 window.ChunkToMesh = (chunk) => {
-    if (chunk.dirty || !chunk.alreadyBuilt) {
+    if (!chunk.dirty && chunk.alreadyBuilt) {
+        return;
         //console.log("rebuild", chunk, chunk.alreadyBuilt, chunk.dirty);
-        chunk.rebuild();
+
     }
+
+    console.log("== ChunkToMesh =>>>", chunk);//, vertexArr, colorArr);
+    chunk.rebuild();
 
     // Create Object
     let geometry = new THREE.BufferGeometry();
 
     let vertexArr = new Float32Array(chunk.vertexGroups.reduce((t, arr) => t + arr.length, 0) * 3);
     let colorArr = new Float32Array(chunk.colorGroups.reduce((t, arr) => t + arr.length, 0) * 4);
-    console.log("=== ChunkToMesh ===>", chunk, vertexArr, colorArr);
 
     let v = new THREE.BufferAttribute(vertexArr, 3);
     let c = new THREE.BufferAttribute(colorArr, 4);

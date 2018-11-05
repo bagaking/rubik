@@ -104,7 +104,7 @@ class Chunk extends CubeArea {
         if (this.alreadyBuilt && !this.dirty) {
             return false; // no need to rebuild
         }
-        console.log(`============= rebuild : `, this._dirtyGroups);
+        console.log("== [START] BUILD CHUNK =>>> ", this.alreadyBuilt ? this._dirtyGroups : "THE FIRST TIME");
 
         let sz = this._scale;
 
@@ -164,7 +164,7 @@ class Chunk extends CubeArea {
             }, from, to)
 
             if (count > 0) {
-                console.log("=>", groupID, to, count, faceMaked, this._vertexGroups[groupID], this._colorGroups[groupID]);
+                console.log(`  - BUILD GROUP(${groupID}, ${to}) => count:${count}, faces:${faceMaked}x2`);//, this._vertexGroups[groupID], this._colorGroups[groupID]);
             }
 
             delete this._dirtyGroups[groupID];
@@ -172,7 +172,7 @@ class Chunk extends CubeArea {
 
         this._alreadyBuilt = true;
 
-        console.log(`CHUNK REBUILD ==> VS:${this._vertexGroups.length} CS:${this._colorGroups.length}`);
+        console.log(`== [END] BUILD CHUNK =<<< `);
         return true;
     }
 
