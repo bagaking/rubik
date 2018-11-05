@@ -2,7 +2,7 @@ const {V3DSize, V3D, CubeArea} = require('spaceout').measure
 
 class Chunk extends CubeArea {
 
-    constructor(width, height, depth, scale, groupSideLength = 32) {
+    constructor(width, height, depth, scale, groupSideLength = 16) {
         super(V3D.prefab.zero, new V3DSize(width, height, depth));
 
         this._groupSideLength = groupSideLength;
@@ -37,8 +37,8 @@ class Chunk extends CubeArea {
     }
 
     getGroupFromTo(groupID) {
-        let posB = this._groupSize.ind2PosB(groupID);
-        let from = this.restrictPosB(posB.scl(this._groupSideLength));
+        let posB = this._groupSize.ind2PosB(groupID).scl(this._groupSideLength);
+        let from = this.restrictPosB(posB);
         let size = V3D.prefab.one.scl(this._groupSideLength - 1);
         let to = this.restrictPosB(from.add(size));
         // console.log("getGroupFromTo", posB, from, size, to)
@@ -46,8 +46,8 @@ class Chunk extends CubeArea {
     }
 
     clearBuild() {
-        this._dirty = {};
-        this._builded = false;
+        this._dirtyGroups = {};
+        this._alreadyBuilt = false;
         this._vertexGroups = new Array(this._groupSize.total);
         this._colorGroups = new Array(this._groupSize.total);
     }
@@ -63,11 +63,12 @@ class Chunk extends CubeArea {
 
     /**
      * set a position
-     * @param {V3D | Array} pos
+     * @param {V3D | Array} posB
      * @param {number} r
      * @param {number} g
      * @param {number} b
      * @param {number} a
+     * @param {boolean?} enabled
      * @return {Chunk} this
      */
     set(posB, r, g, b, a, enabled = true) {
@@ -79,16 +80,16 @@ class Chunk extends CubeArea {
         //console.log(pos, data, ind, this._values[ind]);
         let groupID = this.getPosBGroupID(posB)
 
-        this._dirty[groupID] = this._dirty[groupID] ? this._dirty[groupID] + 1 : 1;
+        this._vertexGroups[groupID] = this._vertexGroups[groupID] ? this._vertexGroups[groupID] + 1 : 1;
         return this;
     }
 
     get dirty() {
-        return Object.keys(this._dirty).length > 0;
+        return Object.keys(this._dirtyGroups).length > 0;
     }
 
     get alreadyBuilt() {
-        return this._builded;
+        return this._alreadyBuilt;
     }
 
     get vertexGroups() {
@@ -103,7 +104,7 @@ class Chunk extends CubeArea {
         if (this.alreadyBuilt && !this.dirty) {
             return false; // no need to rebuild
         }
-        console.log("============= rebuild");
+        console.log(`============= rebuild : `, this._dirtyGroups);
 
         let sz = this._scale;
 
@@ -116,6 +117,7 @@ class Chunk extends CubeArea {
             [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
         ]
 
+        let faceMaked = 0;
         const makeFace = (groupID, color, v0, v1, v2, v3) => {
             this._vertexGroups[groupID].push(v0.map((k, i) => (k + v1[i]) * sz));
             this._vertexGroups[groupID].push(v0.map((k, i) => (k + v1[i] + v2[i]) * sz));
@@ -126,45 +128,49 @@ class Chunk extends CubeArea {
             for (let i = 0; i < 6; i++) {
                 this._colorGroups[groupID].push([color.r, color.g, color.b, color.a]);
             }
+            faceMaked += 1;
         }
 
-        this._groupSize.forEachPosB(ind => {
-            if (!ind in this._dirty) {
+        this._groupSize.forEachPosB(groupID => {
+            if (this.alreadyBuilt && !this._dirtyGroups[groupID]) {
                 return;
             }
 
-            let {from, to} = this.getGroupFromTo(ind);
+            let {from, to} = this.getGroupFromTo(groupID);
 
-            this._vertexGroups[ind] = [];
-            this._colorGroups[ind] = [];
+            this._vertexGroups[groupID] = [];
+            this._colorGroups[groupID] = [];
 
             let count = 0;
+            faceMaked = 0;
             V3D.forEachFromTo((x, y, z) => {
-                let me = this.get([x, y, z]);
+                let posB = [x, y, z];
+                let me = this.get(posB);
                 if (!me) {
-                    throw new Error(`get item error : group-${ind}, x-${x}, y-${y}, z-${z}`)
+                    throw new Error(`get item error : group-${groupID}, x-${x}, y-${y}, z-${z}`)
                 }
                 if (!me._e) return;
                 count++;
-                // console.log("active position", x, y, z, me);
 
                 let t
-                if (x === 0 || (t = this.get([x - 1, y, z]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[0]);
-                if (y === 0 || (t = this.get([x, y - 1, z]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[1]);
-                if (z === 0 || (t = this.get([x, y, z - 1]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[2]);
-                if (x + 1 === this.size.width || (t = this.get([x + 1, y, z]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[3]);
-                if (y + 1 === this.size.height || (t = this.get([x, y + 1, z]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[4]);
-                if (z + 1 === this.size.depth || (t = this.get([x, y, z + 1]), !t._e)) makeFace(ind, me, [x, y, z], ...faces[5]);
+                if (x === 0 || (t = this.get([x - 1, y, z]), !t._e)) makeFace(groupID, me, posB, ...faces[0]);
+                if (y === 0 || (t = this.get([x, y - 1, z]), !t._e)) makeFace(groupID, me, posB, ...faces[1]);
+                if (z === 0 || (t = this.get([x, y, z - 1]), !t._e)) makeFace(groupID, me, posB, ...faces[2]);
+                if (x + 1 === this.size.width || (t = this.get([x + 1, y, z]), !t._e)) makeFace(groupID, me, posB, ...faces[3]);
+                if (y + 1 === this.size.height || (t = this.get([x, y + 1, z]), !t._e)) makeFace(groupID, me, posB, ...faces[4]);
+                if (z + 1 === this.size.depth || (t = this.get([x, y, z + 1]), !t._e)) makeFace(groupID, me, posB, ...faces[5]);
+
+                // console.log("== RENDER", groupID, " =>", [x, y, z], me, faceMaked, this._vertexGroups[groupID], this._colorGroups[groupID]);
             }, from, to)
 
             if (count > 0) {
-                console.log("=>", ind, to, count);
+                console.log("=>", groupID, to, count, faceMaked, this._vertexGroups[groupID], this._colorGroups[groupID]);
             }
 
-            delete this._dirty[ind];
+            delete this._dirtyGroups[groupID];
         })
 
-        this._builded = true;
+        this._alreadyBuilt = true;
 
         console.log(`CHUNK REBUILD ==> VS:${this._vertexGroups.length} CS:${this._colorGroups.length}`);
         return true;

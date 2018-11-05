@@ -15,17 +15,29 @@ window.ChunkToMesh = (chunk) => {
         //console.log("rebuild", chunk, chunk.alreadyBuilt, chunk.dirty);
         chunk.rebuild();
     }
-    console.log("=== ChunkToMesh ===>", chunk);
 
     // Create Object
     let geometry = new THREE.BufferGeometry();
-    let v = new THREE.BufferAttribute(new Float32Array(chunk.vertexGroups.reduce((t,arr)=>t+arr.length,0) * 3), 3);
-    let c = new THREE.BufferAttribute(new Float32Array(chunk.colorGroups.reduce((t,arr)=>t+arr.length,0) * 4), 4);
 
-    chunk.vertexGroups.forEach(group => group.forEach((arr, i) => v.setXYZ(i, ...arr)));
+    let vertexArr = new Float32Array(chunk.vertexGroups.reduce((t, arr) => t + arr.length, 0) * 3);
+    let colorArr = new Float32Array(chunk.colorGroups.reduce((t, arr) => t + arr.length, 0) * 4);
+    console.log("=== ChunkToMesh ===>", chunk, vertexArr, colorArr);
+
+    let v = new THREE.BufferAttribute(vertexArr, 3);
+    let c = new THREE.BufferAttribute(colorArr, 4);
+
+    let sum = 0;
+    chunk.vertexGroups.forEach(group => {
+        (!!group) ? group.forEach((arr, i) => v.setXYZ(sum + i, ...arr)) : group;
+        sum += group.length;
+    });
+    sum = 0;
+    chunk.colorGroups.forEach(group => {
+        (!!group) ? group.forEach((arr, i) => c.setXYZW(sum + i, ... arr.map(k => k / 255))) : group;
+        sum += group.length;
+    });
+
     geometry.addAttribute('position', v);
-
-    chunk.colorGroups.forEach(group => group.forEach((arr, i) => c.setXYZW(i, ... arr.map(k => k / 255))));
     geometry.addAttribute('color', c);
 
     geometry.computeBoundingBox();
