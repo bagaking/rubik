@@ -1,5 +1,21 @@
 const {V3DSize, V3D, CubeArea} = require('spaceout').measure
 
+const matcher = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]];
+const faces = [
+    [[0, 0, 0], [0, 0, 1], [0, 1, 0]], // left
+    [[0, 0, 0], [1, 0, 0], [0, 0, 1]], // top
+    [[0, 0, 0], [0, 1, 0], [1, 0, 0]], // front
+    [[1, 0, 0], [0, 1, 0], [0, 0, 1]], // right
+    [[0, 1, 0], [0, 0, 1], [1, 0, 0]], // bot
+    [[0, 0, 1], [1, 0, 0], [0, 1, 0]], // back
+]
+
+function merge(arr1, arr2, scale = 1) {
+    return arr1.map((v, i) => scale * (v + arr2[i]));
+}
+
+const faceVertex = faces.map(arr => [arr[0], merge(arr[0], arr[1]), merge(merge(arr[0], arr[1]), arr[2]), merge(arr[0], arr[2])]);
+
 class Chunk extends CubeArea {
 
     constructor(width, height, depth, scale, groupSideLength = 16, fakeAO = true) {
@@ -108,22 +124,13 @@ class Chunk extends CubeArea {
         console.log("== [START] BUILD CHUNK =>>> ", this.alreadyBuilt ? this._dirtyGroups : "THE FIRST TIME");
 
         let sz = this._scale;
+        let faceMade = 0;
+        const makeFace = (groupID, color, posB, faceInd, t) => {
 
-        let faces = [
-            [[0, 0, 0], [0, 0, 1], [0, 1, 0]],
-            [[0, 0, 0], [1, 0, 0], [0, 0, 1]],
-            [[0, 0, 0], [0, 1, 0], [1, 0, 0]],
-            [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-            [[0, 1, 0], [0, 0, 1], [1, 0, 0]],
-            [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
-        ]
-
-        let faceMaked = 0;
-        const makeFace = (groupID, color, v0, v1, v2, v3, t) => {
-            let near = v0.map((k, i) => (k + v1[i]) * sz)
-            let outside = v0.map((k, i) => (k + v1[i] + v2[i]) * sz)
-            let far = v0.map((k, i) => (k + v1[i] + v2[i] + v3[i]) * sz)
-            let inside = v0.map((k, i) => (k + v1[i] + v3[i]) * sz)
+            let near = merge(posB, faceVertex[faceInd][0], sz);
+            let outside = merge(posB, faceVertex[faceInd][1], sz);
+            let far = merge(posB, faceVertex[faceInd][2], sz);
+            let inside = merge(posB, faceVertex[faceInd][3], sz);
 
             this._vertexGroups[groupID].push(near);
             this._vertexGroups[groupID].push(outside);
@@ -133,34 +140,31 @@ class Chunk extends CubeArea {
             this._vertexGroups[groupID].push(far);
             this._vertexGroups[groupID].push(inside);
 
-
             let cs;
-            if(this._fakeAO){
+            if (this._fakeAO) {
                 let rate = (100 - (Math.pow((t - 1), 2) / 2)) / 100;
                 cs = [color.r * rate | 0, color.g * rate | 0, color.b * rate | 0, color.a * rate | 0];
-            }else {
+            } else {
                 cs = [color.r, color.g, color.b, color.a];
             }
 
-            // console.log(v0, t, color, cs)
-            // if (!t) {
-            //     console.log(""v0, t, color, cs);
-            // }
             for (let i = 0; i < 6; i++) {
                 this._colorGroups[groupID].push(cs);
             }
-            faceMaked += 1;
+            faceMade += 1;
         }
 
-        const matcher = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]];
         const around = (posB) => {
             let t = this.get(posB);
             if (this.posBInside(posB) && t._e) return 0;
 
-            return this._fakeAO ? matcher.reduce((v, arr) => {
+            return this._fakeAO ? matcher.reduce((v, arr, i) => {
                 let pB = [posB[0] + arr[0], posB[1] + arr[1], posB[2] + arr[2]];
                 return v + ((this.posBInside(pB) && this.get(pB)._e) ? 1 : 0);
             }, 0) : 1;
+        }
+
+        const pick = (posB, faceInd) => {
         }
 
         this._groupSize.forEachPosB(groupID => {
@@ -174,7 +178,7 @@ class Chunk extends CubeArea {
             this._colorGroups[groupID] = [];
 
             let count = 0;
-            faceMaked = 0;
+            faceMade = 0;
             V3D.forEachFromTo((x, y, z) => {
                 let posB = [x, y, z];
                 let me = this.get(posB);
@@ -185,18 +189,18 @@ class Chunk extends CubeArea {
                 count++;
 
                 let t
-                if (t = around([x - 1, y, z]), t > 0) makeFace(groupID, me, posB, ...faces[0], t);
-                if (t = around([x, y - 1, z]), t > 0) makeFace(groupID, me, posB, ...faces[1], t);
-                if (t = around([x, y, z - 1]), t > 0) makeFace(groupID, me, posB, ...faces[2], t);
-                if (t = around([x + 1, y, z]), t > 0) makeFace(groupID, me, posB, ...faces[3], t);
-                if (t = around([x, y + 1, z]), t > 0) makeFace(groupID, me, posB, ...faces[4], t);
-                if (t = around([x, y, z + 1]), t > 0) makeFace(groupID, me, posB, ...faces[5], t);
+                if (t = around([x - 1, y, z], 0), t > 0) makeFace(groupID, me, posB, 0, t);
+                if (t = around([x, y - 1, z], 1), t > 0) makeFace(groupID, me, posB, 1, t);
+                if (t = around([x, y, z - 1], 2), t > 0) makeFace(groupID, me, posB, 2, t);
+                if (t = around([x + 1, y, z], 3), t > 0) makeFace(groupID, me, posB, 3, t);
+                if (t = around([x, y + 1, z], 4), t > 0) makeFace(groupID, me, posB, 4, t);
+                if (t = around([x, y, z + 1], 5), t > 0) makeFace(groupID, me, posB, 5, t);
 
-                // console.log("== RENDER", groupID, " =>", [x, y, z], me, faceMaked, this._vertexGroups[groupID], this._colorGroups[groupID]);
+                // console.log("== RENDER", groupID, " =>", [x, y, z], me, faceMade, this._vertexGroups[groupID], this._colorGroups[groupID]);
             }, from, to)
 
             if (count > 0) {
-                console.log(`  - BUILD GROUP(${groupID}, ${to}) => count:${count}, faces:${faceMaked}x2`);//, this._vertexGroups[groupID], this._colorGroups[groupID]);
+                console.log(`  - BUILD GROUP(${groupID}, ${to}) => count:${count}, faces:${faceMade}x2`);//, this._vertexGroups[groupID], this._colorGroups[groupID]);
             }
 
             delete this._dirtyGroups[groupID];
