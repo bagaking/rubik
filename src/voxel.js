@@ -88,11 +88,10 @@ class Voxel {
      * @param {Buffer | ArrayBuffer } input
      */
     Load(name, buffer, scale = 1) {
-        console.log("start decode", buffer);
+        console.log("== LOAD VOX => from buffer :", buffer);
         if (!_.isBuffer(buffer) && !_.isArrayBuffer(buffer)) {
             throw new Error(`LoadModel error : input should be a buffer. ${buffer} is invalid.`);
         }
-
 
         let byteArray = new Uint8Array(buffer);
 
@@ -244,8 +243,9 @@ class Voxel {
             let cdStart = cur;
             let length = chunksHdl.realLength(chunkInfo.id, cdStart)
             let cdEnd = cur + length;
+            //chunkInfo.size == length;
 
-            console.log("find chunk ", chunkInfo, cdStart, cdEnd, length, chunkInfo.size == length);
+            console.log(`  - VOX CHUNK FOUND => ${cdStart} to ${cdEnd} (${length})`, chunkInfo);
             chunksHdl.sm.transfer(chunkInfo, cdStart, cdEnd);
             cur += length; // todo : should cur do this? or done it in each function?
         }
